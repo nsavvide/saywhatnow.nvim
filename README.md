@@ -22,7 +22,7 @@ A Neovim "Time Machine" for your code. Scrub through the git history of any func
 
 ```lua
 {
-  "nielssavvides/saywhatnow.nvim",
+  "nsavvide/saywhatnow.nvim",
   dependencies = { "nvim-treesitter/nvim-treesitter" },
   config = function()
     require("saywhatnow").setup()
@@ -34,7 +34,7 @@ A Neovim "Time Machine" for your code. Scrub through the git history of any func
 
 ```lua
 use {
-  "nielssavvides/saywhatnow.nvim",
+  "nsavvide/saywhatnow.nvim",
   requires = { "nvim-treesitter/nvim-treesitter" },
   config = function()
     require("saywhatnow").setup()
