@@ -10,6 +10,8 @@ A Neovim "Time Machine" for your code. Scrub through the git history of any func
 - Works with visual selections for arbitrary line ranges
 - Commit hash, message, and date shown in the window bar
 
+![Example](./assets/260418_23h05m00s_screenshot.png)
+
 ## Requirements
 
 - Neovim 0.9+
