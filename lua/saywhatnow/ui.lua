@@ -1,5 +1,6 @@
 local M = {}
 
+-- Create a namespace for our ghost text
 local ns_blame = vim.api.nvim_create_namespace("saywhatnow_blame")
 
 local state = {
@@ -18,14 +19,41 @@ local function render_commit()
   local commit = state.commits[state.current_idx]
   local cwd = vim.fn.fnamemodify(state.filepath, ":p:h")
 
+  -- 1. Fetch the file content at this specific commit
   local cmd = { "git", "--no-pager", "show", commit.hash .. ":" .. state.rel_path }
   local obj = vim.system(cmd, { text = true, cwd = cwd }):wait()
 
+  -- IF GIT FAILS TO FIND THE FILE (e.g., file renamed or didn't exist yet)
   if obj.code ~= 0 then
-    vim.notify("SayWhatNow: Git failed to fetch file -> " .. (obj.stderr or ""), vim.log.levels.ERROR)
-    return
+    -- Create a friendly fallback message instead of crashing
+    local fallback_lines = {
+      "/* ",
+      " * SayWhatNow: File not found at this path in this commit.",
+      " *",
+      " * This usually means the file was renamed, moved, ",
+      " * or did not exist yet at the current path.",
+      " *",
+      " * Git Error: " .. vim.trim(obj.stderr or "Unknown"),
+      " */"
+    }
+    
+    vim.api.nvim_set_option_value("modifiable", true, { buf = state.right_buf })
+    vim.api.nvim_buf_set_lines(state.right_buf, 0, -1, false, fallback_lines)
+    vim.api.nvim_set_option_value("modifiable", false, { buf = state.right_buf })
+    
+    -- Clear any leftover ghost text from the previous commit
+    vim.api.nvim_buf_clear_namespace(state.right_buf, ns_blame, 0, -1)
+
+    -- Update the winbar so the user still knows what commit they are stuck on
+    local short_msg = string.sub(commit.msg, 1, 40)
+    if #commit.msg > 40 then short_msg = short_msg .. "..." end
+    local right_winbar = string.format(" %%#WarningMsg#%s%%* - %s (%s)", string.sub(commit.hash, 1, 7), short_msg, commit.date)
+    vim.api.nvim_set_option_value("winbar", right_winbar, { win = state.right_win })
+    
+    return -- Stop executing the rest of the render function
   end
 
+  -- IF GIT SUCCEEDS
   local lines = {}
   for line in string.gmatch(obj.stdout, "([^\n]*)\n?") do
     table.insert(lines, line)
@@ -36,6 +64,7 @@ local function render_commit()
   vim.api.nvim_buf_set_lines(state.right_buf, 0, -1, false, lines)
   vim.api.nvim_set_option_value("modifiable", false, { buf = state.right_buf })
 
+  -- 2. Fetch and parse git blame for the ghost text (using absolute filepath to avoid 128 error)
   local blame_cmd = { "git", "blame", "--porcelain", commit.hash, "--", state.filepath }
   local blame_obj = vim.system(blame_cmd, { text = true, cwd = cwd }):wait()
 
@@ -61,6 +90,7 @@ local function render_commit()
       elseif string.match(b_line, "^\t") then
         local code_line = string.sub(b_line, 2)
 
+        -- Skip drawing ghost text for empty lines to reduce UI clutter
         if vim.trim(code_line) ~= "" then
           local data = parsed_commits[current_hash]
           local display_summary = data.summary
@@ -69,6 +99,7 @@ local function render_commit()
             display_summary = string.sub(display_summary, 1, 27) .. "..."
           end
 
+          -- Match on the first 7 chars to avoid hidden whitespace bugs
           local is_current = (string.sub(current_hash, 1, 7) == string.sub(commit.hash, 1, 7))
           local hl_group = is_current and "String" or "Comment"
           local prefix = is_current and "★ " or "  "
@@ -80,6 +111,7 @@ local function render_commit()
             virt_text_pos = "eol",
           }
 
+          -- Highlight the background of the exact lines changed in this commit
           if is_current then
             extmark_opts.line_hl_group = "Visual"
           end
@@ -87,6 +119,7 @@ local function render_commit()
           vim.api.nvim_buf_set_extmark(state.right_buf, ns_blame, line_idx, 0, extmark_opts)
         end
 
+        -- Always increment the line index so ghost text doesn't misalign!
         line_idx = line_idx + 1
       end
     end
@@ -95,8 +128,7 @@ local function render_commit()
   -- 3. UI and Winbar Updates
   local short_msg = string.sub(commit.msg, 1, 40)
   if #commit.msg > 40 then short_msg = short_msg .. "..." end
-  local right_winbar = string.format(" %%#WarningMsg#%s%%* - %s (%s)", string.sub(commit.hash, 1, 7), short_msg,
-    commit.date)
+  local right_winbar = string.format(" %%#WarningMsg#%s%%* - %s (%s)", string.sub(commit.hash, 1, 7), short_msg, commit.date)
   vim.api.nvim_set_option_value("winbar", right_winbar, { win = state.right_win })
 
   local max_lines = vim.api.nvim_buf_line_count(state.right_buf)
@@ -154,10 +186,8 @@ local function show_help()
 
   local win = vim.api.nvim_open_win(buf, true, opts)
 
-  vim.keymap.set("n", "q", function() pcall(vim.api.nvim_win_close, win, true) end,
-    { buffer = buf, noremap = true, silent = true })
-  vim.keymap.set("n", "<Esc>", function() pcall(vim.api.nvim_win_close, win, true) end,
-    { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set("n", "q", function() pcall(vim.api.nvim_win_close, win, true) end, { buffer = buf, noremap = true, silent = true })
+  vim.keymap.set("n", "<Esc>", function() pcall(vim.api.nvim_win_close, win, true) end, { buffer = buf, noremap = true, silent = true })
 end
 
 function M.open_time_machine(commits, filepath, start_line)
