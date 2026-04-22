@@ -1,5 +1,7 @@
 local M = {}
 
+local ns_blame = vim.api.nvim_create_namespace("saywhatnow_blame")
+
 local state = {
   commits = {},
   current_idx = 1,
@@ -14,9 +16,10 @@ local state = {
 
 local function render_commit()
   local commit = state.commits[state.current_idx]
-
-  local cmd = { "git", "--no-pager", "show", commit.hash .. ":" .. state.rel_path }
   local cwd = vim.fn.fnamemodify(state.filepath, ":p:h")
+
+  -- 1. Fetch the file content at this specific commit
+  local cmd = { "git", "--no-pager", "show", commit.hash .. ":" .. state.rel_path }
   local obj = vim.system(cmd, { text = true, cwd = cwd }):wait()
 
   if obj.code ~= 0 then
@@ -34,6 +37,58 @@ local function render_commit()
   vim.api.nvim_buf_set_lines(state.right_buf, 0, -1, false, lines)
   vim.api.nvim_set_option_value("modifiable", false, { buf = state.right_buf })
 
+  -- 2. Fetch and parse git blame for the ghost text
+  local blame_cmd = { "git", "blame", "--porcelain", commit.hash, "--", state.rel_path }
+  local blame_obj = vim.system(blame_cmd, { text = true, cwd = cwd }):wait()
+
+  vim.api.nvim_buf_clear_namespace(state.right_buf, ns_blame, 0, -1)
+
+  if blame_obj.code == 0 then
+    local parsed_commits = {}
+    local line_idx = 0
+    local current_hash = nil
+
+    for b_line in string.gmatch(blame_obj.stdout, "[^\r\n]+") do
+      -- Porcelain format groups lines. The hash block comes first.
+      local hash_match = string.match(b_line, "^([0-9a-f]+) %d+ %d+")
+
+      if hash_match then
+        current_hash = hash_match
+        if not parsed_commits[current_hash] then
+          parsed_commits[current_hash] = { author = "Unknown", summary = "" }
+        end
+      elseif string.match(b_line, "^author ") then
+        parsed_commits[current_hash].author = string.sub(b_line, 8)
+      elseif string.match(b_line, "^summary ") then
+        parsed_commits[current_hash].summary = string.sub(b_line, 9)
+      elseif string.match(b_line, "^\t") then
+        -- A tab character indicates the end of the data block and the start of the file line
+        local data = parsed_commits[current_hash]
+        local display_summary = data.summary
+
+        -- Truncate long commit messages so they don't break UI wrapping
+        if #display_summary > 30 then
+          display_summary = string.sub(display_summary, 1, 27) .. "..."
+        end
+
+        -- Emphasize lines changed in the CURRENT commit being viewed
+        local is_current = (current_hash == commit.hash)
+        local hl_group = is_current and "String" or "Comment"
+        local prefix = is_current and "★ " or "  "
+
+        local vt_text = string.format("%s%s: %s", prefix, data.author, display_summary)
+
+        pcall(vim.api.nvim_buf_set_extmark, state.right_buf, ns_blame, line_idx, 0, {
+          virt_text = { { vt_text, hl_group } },
+          virt_text_pos = "eol",
+        })
+
+        line_idx = line_idx + 1
+      end
+    end
+  end
+
+  -- 3. UI and Winbar Updates
   local short_msg = string.sub(commit.msg, 1, 40)
   if #commit.msg > 40 then short_msg = short_msg .. "..." end
   local right_winbar = string.format(" %%#WarningMsg#%s%%* - %s (%s)", string.sub(commit.hash, 1, 7), short_msg,
@@ -111,7 +166,6 @@ function M.open_time_machine(commits, filepath, start_line)
   state.left_buf = vim.api.nvim_win_get_buf(state.left_win)
 
   local original_winbar = vim.api.nvim_get_option_value("winbar", { win = state.left_win })
-
   vim.api.nvim_set_option_value("winbar", " %#String#Current State (Local)%*", { win = state.left_win })
 
   local cwd = vim.fn.fnamemodify(filepath, ":p:h")
