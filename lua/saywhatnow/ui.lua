@@ -47,7 +47,6 @@ local function render_commit()
     local current_hash = nil
 
     for b_line in string.gmatch(blame_obj.stdout, "[^\r\n]+") do
-      -- Porcelain format groups lines. The hash block comes first.
       local hash_match = string.match(b_line, "^([0-9a-f]+) %d+ %d+")
 
       if hash_match then
@@ -60,35 +59,33 @@ local function render_commit()
       elseif string.match(b_line, "^summary ") then
         parsed_commits[current_hash].summary = string.sub(b_line, 9)
       elseif string.match(b_line, "^\t") then
-        -- A tab character indicates the end of the data block and the start of the file line
-        local data = parsed_commits[current_hash]
-        local display_summary = data.summary
+        local code_line = string.sub(b_line, 2)
 
-        -- Truncate long commit messages so they don't break UI wrapping
-        if #display_summary > 30 then
-          display_summary = string.sub(display_summary, 1, 27) .. "..."
+        if vim.trim(code_line) ~= "" then
+          local data = parsed_commits[current_hash]
+          local display_summary = data.summary
+
+          if #display_summary > 30 then
+            display_summary = string.sub(display_summary, 1, 27) .. "..."
+          end
+
+          local is_current = (string.sub(current_hash, 1, 7) == string.sub(commit.hash, 1, 7))
+          local hl_group = is_current and "String" or "Comment"
+          local prefix = is_current and "★ " or "  "
+
+          local vt_text = string.format("%s%s: %s", prefix, data.author, display_summary)
+
+          local extmark_opts = {
+            virt_text = { { vt_text, hl_group } },
+            virt_text_pos = "eol",
+          }
+
+          if is_current then
+            extmark_opts.line_hl_group = "Visual"
+          end
+
+          vim.api.nvim_buf_set_extmark(state.right_buf, ns_blame, line_idx, 0, extmark_opts)
         end
-
-        -- Emphasize lines changed in the CURRENT commit being viewed
-        local is_current = (current_hash == commit.hash)
-        local hl_group = is_current and "String" or "Comment"
-        local prefix = is_current and "★ " or "  "
-
-        local vt_text = string.format("%s%s: %s", prefix, data.author, display_summary)
-
-        -- Base options for the ghost text
-        local extmark_opts = {
-          virt_text = { { vt_text, hl_group } },
-          virt_text_pos = "eol",
-        }
-
-        -- Highlight the background of the line using your theme's Visual selection color
-        if is_current then
-          extmark_opts.line_hl_group = "Visual"
-        end
-
-        -- No pcall, so it crashes loudly if something goes wrong!
-        vim.api.nvim_buf_set_extmark(state.right_buf, ns_blame, line_idx, 0, extmark_opts)
 
         line_idx = line_idx + 1
       end
