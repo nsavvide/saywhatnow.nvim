@@ -76,10 +76,19 @@ local function render_commit()
 
         local vt_text = string.format("%s%s: %s", prefix, data.author, display_summary)
 
-        pcall(vim.api.nvim_buf_set_extmark, state.right_buf, ns_blame, line_idx, 0, {
+        -- Base options for the ghost text
+        local extmark_opts = {
           virt_text = { { vt_text, hl_group } },
           virt_text_pos = "eol",
-        })
+        }
+
+        -- Highlight the background of the line using your theme's Visual selection color
+        if is_current then
+          extmark_opts.line_hl_group = "Visual"
+        end
+
+        -- No pcall, so it crashes loudly if something goes wrong!
+        vim.api.nvim_buf_set_extmark(state.right_buf, ns_blame, line_idx, 0, extmark_opts)
 
         line_idx = line_idx + 1
       end
