@@ -18,7 +18,6 @@ local function render_commit()
   local commit = state.commits[state.current_idx]
   local cwd = vim.fn.fnamemodify(state.filepath, ":p:h")
 
-  -- 1. Fetch the file content at this specific commit
   local cmd = { "git", "--no-pager", "show", commit.hash .. ":" .. state.rel_path }
   local obj = vim.system(cmd, { text = true, cwd = cwd }):wait()
 
@@ -37,12 +36,8 @@ local function render_commit()
   vim.api.nvim_buf_set_lines(state.right_buf, 0, -1, false, lines)
   vim.api.nvim_set_option_value("modifiable", false, { buf = state.right_buf })
 
-  -- 2. Fetch and parse git blame for the ghost text
-  local blame_cmd = { "git", "blame", "--porcelain", commit.hash, "--", state.rel_path }
+  local blame_cmd = { "git", "blame", "--porcelain", commit.hash, "--", state.filepath }
   local blame_obj = vim.system(blame_cmd, { text = true, cwd = cwd }):wait()
-  vim.notify(
-    "Blame Exit Code: " .. tostring(blame_obj.code) .. " | Output Length: " .. tostring(#(blame_obj.stdout or "")),
-    vim.log.levels.INFO)
 
   vim.api.nvim_buf_clear_namespace(state.right_buf, ns_blame, 0, -1)
 
