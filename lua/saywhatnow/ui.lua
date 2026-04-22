@@ -40,6 +40,9 @@ local function render_commit()
   -- 2. Fetch and parse git blame for the ghost text
   local blame_cmd = { "git", "blame", "--porcelain", commit.hash, "--", state.rel_path }
   local blame_obj = vim.system(blame_cmd, { text = true, cwd = cwd }):wait()
+  vim.notify(
+    "Blame Exit Code: " .. tostring(blame_obj.code) .. " | Output Length: " .. tostring(#(blame_obj.stdout or "")),
+    vim.log.levels.INFO)
 
   vim.api.nvim_buf_clear_namespace(state.right_buf, ns_blame, 0, -1)
 
