@@ -128,7 +128,19 @@ local function render_commit()
   -- 3. UI and Winbar Updates
   local short_msg = string.sub(commit.msg, 1, 40)
   if #commit.msg > 40 then short_msg = short_msg .. "..." end
-  local right_winbar = string.format(" %%#WarningMsg#%s%%* - %s (%s)", string.sub(commit.hash, 1, 7), short_msg, commit.date)
+
+  local git = require("saywhatnow.git")
+  local pr_num = commit.pr_num
+  if pr_num == nil then
+    pr_num = git.get_pr_number(commit.hash, commit.msg)
+    commit.pr_num = pr_num  -- cache so navigating back doesn't re-fetch
+  end
+
+  local pr_section = pr_num and string.format("  %%#DiagnosticInfo# PR #%s%%*", pr_num) or ""
+  local right_winbar = string.format(
+    " %%#WarningMsg#%s%%* - %s (%s)%s",
+    string.sub(commit.hash, 1, 7), short_msg, commit.date, pr_section
+  )
   vim.api.nvim_set_option_value("winbar", right_winbar, { win = state.right_win })
 
   local max_lines = vim.api.nvim_buf_line_count(state.right_buf)
@@ -156,17 +168,33 @@ local function newer_commit()
   end
 end
 
+local function open_pr_in_browser()
+  local commit = state.commits[state.current_idx]
+  local pr_num = commit and commit.pr_num
+
+  if not pr_num then
+    vim.notify("SayWhatNow: No PR found for this commit.", vim.log.levels.WARN)
+    return
+  end
+
+  local obj = vim.system({ "gh", "pr", "view", pr_num, "--web" }, { text = true }):wait()
+  if obj.code ~= 0 then
+    vim.notify("SayWhatNow: Failed to open PR -> " .. (obj.stderr or "Unknown"), vim.log.levels.ERROR)
+  end
+end
+
 local function show_help()
   local buf = vim.api.nvim_create_buf(false, true)
   local lines = {
     " SayWhatNow Keybinds ",
     " ---------------------- ",
-    "  H  : Scrub Backward in Time (Older) ",
-    "  L  : Scrub Forward in Time (Newer)  ",
-    "  q  : Close Time Machine             ",
-    "  ?  : Show this help menu            ",
+    "  H   : Scrub Backward in Time (Older) ",
+    "  L   : Scrub Forward in Time (Newer)  ",
+    "  gp  : Open PR in Browser             ",
+    "  q   : Close Time Machine             ",
+    "  ?   : Show this help menu            ",
     " ",
-    " (Press 'q' or '<Esc>' to close)      "
+    " (Press 'q' or '<Esc>' to close)       "
   }
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
@@ -225,6 +253,7 @@ function M.open_time_machine(commits, filepath, start_line)
     local opts = { buffer = buf, noremap = true, silent = true }
     vim.keymap.set("n", "H", older_commit, vim.tbl_extend("force", opts, { desc = "Scrub backward" }))
     vim.keymap.set("n", "L", newer_commit, vim.tbl_extend("force", opts, { desc = "Scrub forward" }))
+    vim.keymap.set("n", "gp", open_pr_in_browser, vim.tbl_extend("force", opts, { desc = "Open PR in browser" }))
     vim.keymap.set("n", "?", show_help, vim.tbl_extend("force", opts, { desc = "Show Help" }))
   end
 
@@ -242,6 +271,7 @@ function M.open_time_machine(commits, filepath, start_line)
       end
       pcall(vim.keymap.del, "n", "H", { buffer = state.left_buf })
       pcall(vim.keymap.del, "n", "L", { buffer = state.left_buf })
+      pcall(vim.keymap.del, "n", "gp", { buffer = state.left_buf })
       pcall(vim.keymap.del, "n", "?", { buffer = state.left_buf })
     end
   })

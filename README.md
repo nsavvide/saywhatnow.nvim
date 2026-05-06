@@ -17,6 +17,7 @@ A Neovim "Time Machine" for your code. Scrub through the git history of any func
 - Neovim 0.9+
 - [nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter) with parsers for your languages
 - Git
+- [gh](https://cli.github.com/) (optional — required for `gp` to open PRs in the browser)
 
 ## Installation
 
@@ -87,6 +88,7 @@ These bindings are active while the time machine window is open:
 |---------|-----------------------------------|
 | `H`     | Go back in time (older commit)    |
 | `L`     | Go forward in time (newer commit) |
+| `gp`    | Open associated PR in browser     |
 | `q`     | Close the time machine            |
 | `?`     | Show help                         |
 | `<Esc>` | Close help popup                  |
